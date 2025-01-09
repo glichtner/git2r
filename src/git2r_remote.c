@@ -446,50 +446,82 @@ cleanup:
     return url;
 }
 
+/* A small struct to store the dynamically allocated proxy URL */
+typedef struct {
+    char *proxy_url;
+} git2r_proxy_payload;
+
+/* Free the payload's allocated proxy_url, if any */
+static void git2r_proxy_payload_free(git2r_proxy_payload *payload)
+{
+    if (payload && payload->proxy_url) {
+        free(payload->proxy_url);
+        payload->proxy_url = NULL;
+    }
+}
+
+/**
+ * Initialize and set libgit2 proxy options from an R object.
+ *
+ * This function populates \p proxy_opts based on the value of \p proxy_val:
+ * \li If \p proxy_val is \c R_NilValue (i.e. \c NULL in R), proxy is set to
+ *     \c GIT_PROXY_NONE (disabled).
+ * \li If \p proxy_val is a logical \c TRUE, proxy is set to
+ *     \c GIT_PROXY_AUTO (automatic detection).
+ * \li If \p proxy_val is a character vector of length 1, proxy is set to
+ *     \c GIT_PROXY_SPECIFIED with that URL.
+ * Otherwise, the function returns \c -1 to indicate an invalid or unsupported
+ * value.
+ *
+ * @param proxy_opts A pointer to a \c git_proxy_options struct, which is
+ *                   initialized (via \c git_proxy_options_init) and then
+ *                   populated according to \p proxy_val.
+ * @param proxy_val An R object specifying the desired proxy configuration:
+ *                  \c NULL (no proxy), a logical \c TRUE (auto), or a
+ *                  character string (proxy URL).
+ * @return An integer error code: 0 on success, or -1 if an invalid
+ *         \p proxy_val is provided or if other setup fails.
+ */
 static int git2r_set_proxy_options(git_proxy_options *proxy_opts, SEXP proxy_val)
 {
-    /* This is just a simple initialization; you should handle errors if desired. */
     git_proxy_options_init(proxy_opts, GIT_PROXY_OPTIONS_VERSION);
 
-    /* For storing the proxy URL if specified.  
-        Because we need the string to live at least as long as proxy_opts, store in a static buffer,
-        or a persistent structure, or something that won't go out of scope. 
-        (In practice, you would do something more robust than a fixed buffer.) */
-    static char proxy_url_buf[1024];
-    memset(proxy_url_buf, 0, sizeof(proxy_url_buf));
+    git_proxy_options_init(proxy_opts, GIT_PROXY_OPTIONS_VERSION);
+    proxy_opts->type = GIT_PROXY_NONE;
+    proxy_opts->url  = NULL;
 
-    /* 1) Proxy = NULL => GIT_PROXY_NONE. 
-        2) Proxy = TRUE => GIT_PROXY_AUTO.
-        3) Proxy = string => GIT_PROXY_SPECIFIED with that URL. */
+    /* Clear out any existing payload->proxy_url */
+    payload->proxy_url = NULL;
+    /* 1) proxy_val = NULL => GIT_PROXY_NONE */
+    /* 2) proxy_val = TRUE => GIT_PROXY_AUTO */
+    /* 3) proxy_val = string => GIT_PROXY_SPECIFIED + allocate that string */
 
     if (Rf_isNull(proxy_val)) {
-        /* Matches “proxy=None” -> GIT_PROXY_NONE */
-        proxy_opts->type = GIT_PROXY_NONE;
+        /* GIT_PROXY_NONE by default, already set above */
     } 
-    else if (Rf_isLogical(proxy_val) && LOGICAL(proxy_val)[0] == 1) {
-        /* Matches “proxy=True” -> GIT_PROXY_AUTO */
+    else if (Rf_isLogical(proxy_val) && Rf_length(proxy_val) == 1 && LOGICAL(proxy_val)[0] == 1) {
         proxy_opts->type = GIT_PROXY_AUTO;
     }
     else if (Rf_isString(proxy_val) && Rf_length(proxy_val) == 1) {
-        /* Matches “proxy='http://...'” -> GIT_PROXY_SPECIFIED */
         proxy_opts->type = GIT_PROXY_SPECIFIED;
-
         const char *val = CHAR(STRING_ELT(proxy_val, 0));
-        if (val && strlen(val) < sizeof(proxy_url_buf)) {
-            strcpy(proxy_url_buf, val);
-            proxy_opts->url = proxy_url_buf;
-        } else {
-            /* You may want to handle error if string is too large. */
-            return -1;
+        if (val) {
+            size_t len = strlen(val);
+            payload->proxy_url = (char *)malloc(len + 1);
+            if (!payload->proxy_url) {
+                /* Allocation failed */
+                return -1;
+            }
+            memcpy(payload->proxy_url, val, len + 1);
+            proxy_opts->url = payload->proxy_url;
         }
     }
     else {
-        /* Raise an error or handle invalid input. */
-        /* e.g. “TypeError: Proxy must be NULL, TRUE, or a string.” */
+        /* Invalid input: not NULL, not TRUE, not a single string */
         return -1;
     }
 
-    return 0; /* success */
+    return 0;
 }
 
 /**
@@ -507,7 +539,8 @@ git2r_remote_ls(
     SEXP name,
     SEXP repo,
     SEXP credentials,
-    SEXP proxy_val)
+    SEXP proxy_val
+)
 {
     const char *name_ = NULL;
     SEXP result = R_NilValue;
@@ -520,6 +553,8 @@ git2r_remote_ls(
     git2r_transfer_data payload = GIT2R_TRANSFER_DATA_INIT;
     git_repository *repository = NULL;
     git_proxy_options proxy_opts;
+    git2r_proxy_payload proxy_payload;
+    memset(&proxy_payload, 0, sizeof(proxy_payload));
 
     if (git2r_arg_check_string(name))
         git2r_error(__func__, NULL, "'name'", git2r_err_string_arg);
@@ -575,6 +610,7 @@ git2r_remote_ls(
     }
 
 cleanup:
+    git2r_proxy_payload_free(&proxy_payload);    
     git_repository_free(repository);
 
     if (nprotect)
