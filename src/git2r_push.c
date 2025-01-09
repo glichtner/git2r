@@ -59,6 +59,7 @@ git2r_nothing_to_push(
  * @param name The remote to push to
  * @param refspec The string vector of refspec to push
  * @param credentials The credentials for remote repository access.
+ * @param proxy_val The proxy settings
  * @return R_NilValue
  */
 SEXP attribute_hidden
@@ -66,7 +67,8 @@ git2r_push(
     SEXP repo,
     SEXP name,
     SEXP refspec,
-    SEXP credentials)
+    SEXP credentials,
+    SEXP proxy_val)
 {
     int error;
     git_remote *remote = NULL;
@@ -74,6 +76,7 @@ git2r_push(
     git_strarray c_refspecs = {0};
     git_push_options opts = GIT_PUSH_OPTIONS_INIT;
     git2r_transfer_data payload = GIT2R_TRANSFER_DATA_INIT;
+    git_proxy_options proxy_opts = GIT_PROXY_OPTIONS_INIT;
 
     if (git2r_arg_check_string(name))
         git2r_error(__func__, NULL, "'name'", git2r_err_string_arg);
@@ -81,6 +84,8 @@ git2r_push(
         git2r_error(__func__, NULL, "'refspec'", git2r_err_string_vec_arg);
     if (git2r_arg_check_credentials(credentials))
         git2r_error(__func__, NULL, "'credentials'", git2r_err_credentials_arg);
+    if (git2r_arg_check_proxy(proxy_val))
+        git2r_error(__func__, NULL, "'proxy_val'", git2r_err_proxy_arg);
 
     if (git2r_nothing_to_push(refspec))
         return R_NilValue;
@@ -92,6 +97,16 @@ git2r_push(
     error = git_remote_lookup(&remote, repository, CHAR(STRING_ELT(name, 0)));
     if (error)
         goto cleanup;
+
+    /* Initialize proxy options */
+    error = git2r_set_proxy_options(&proxy_opts, proxy_val);
+    if (error)
+        git2r_error(
+            __func__,
+            git_error_last(),
+            git2r_err_unable_to_set_proxy_options,
+            NULL);
+    opts.proxy_opts = proxy_opts;
 
     payload.credentials = credentials;
     opts.callbacks.payload = &payload;

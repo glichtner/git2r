@@ -67,6 +67,57 @@ stopifnot(identical(sha(fh), fh$sha))
 ## Test show method of non-empty repository where head is null
 show(repo_2)
 
+if (identical(Sys.getenv("NOT_CRAN"), "true")) {
+  ## Only do proxy parameter tests when networking is allowed (not on CRAN).
+
+  message("Testing fetch() with proxy=TRUE (auto-detect)")
+  tryCatch({
+    fetch(repo_2, "origin", proxy = TRUE)
+    ## If no error, the parameter was accepted.
+    ## (We won't see new commits unless there's an actual update, but
+    ## the call at least shouldn’t fail purely because of the proxy parameter.)
+  }, error = function(e) {
+    message(
+            "fetch() with proxy=TRUE failed (likely no real proxy or other net issues): ", 
+            e$message)
+  })
+
+}
+
+## Check that 'git2r_arg_check_proxy' raise error
+res <- tools::assertError(
+  .Call(
+    git2r:::git2r_remote_fetch,
+    repo_1,
+    "origin",
+    NULL,      # credentials (valid or NULL)
+    "fetch",   # msg
+    FALSE,     # verbose
+    NULL,      # refspec
+    1L         # <-- invalid proxy argument (should be NULL, TRUE, or a string)
+  )
+)
+stopifnot(
+  length(grep("'proxy' must be NULL, TRUE, or a single string", res[[1]]$message)) > 0
+)
+
+## Another invalid case: vector of length 2
+res <- tools::assertError(
+  .Call(
+    git2r:::git2r_remote_fetch,
+    repo_1,
+    "origin",
+    NULL,
+    "fetch",
+    FALSE,
+    NULL,
+    c("http://example", "http://example2") # invalid, more than one string
+  )
+)
+stopifnot(
+  length(grep("'proxy' must be NULL, TRUE, or a single string", res[[1]]$message)) > 0
+)
+
 ## Check that 'git2r_arg_check_credentials' raise error
 res <- tools::assertError(
                   .Call(git2r:::git2r_remote_fetch, repo_1, "origin",

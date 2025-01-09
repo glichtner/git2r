@@ -123,6 +123,7 @@ git2r_update_tips_cb(
  * @param verbose Print information each time a reference is updated locally.
  * @param refspecs The refspecs to use for this fetch. Pass R_NilValue
  *        to use the base refspecs.
+ * @param proxy_val The proxy settings
  * @return R_NilValue
  */
 SEXP attribute_hidden
@@ -132,7 +133,8 @@ git2r_remote_fetch(
     SEXP credentials,
     SEXP msg,
     SEXP verbose,
-    SEXP refspecs)
+    SEXP refspecs,
+    SEXP proxy_val)
 {
     int error, nprotect = 0;
     SEXP result = R_NilValue;
@@ -142,6 +144,7 @@ git2r_remote_fetch(
     git_fetch_options fetch_opts = GIT_FETCH_OPTIONS_INIT;
     git2r_transfer_data payload = GIT2R_TRANSFER_DATA_INIT;
     git_strarray refs = {0};
+    git_proxy_options proxy_opts = GIT_PROXY_OPTIONS_INIT;
 
     if (git2r_arg_check_string(name))
         git2r_error(__func__, NULL, "'name'", git2r_err_string_arg);
@@ -153,6 +156,19 @@ git2r_remote_fetch(
         git2r_error(__func__, NULL, "'verbose'", git2r_err_logical_arg);
     if ((!Rf_isNull(refspecs)) && git2r_arg_check_string_vec(refspecs))
         git2r_error(__func__, NULL, "'refspecs'", git2r_err_string_vec_arg);
+    if (git2r_arg_check_proxy(proxy_val))
+        git2r_error(__func__, NULL, "'proxy_val'", git2r_err_proxy_arg);
+
+    /* Initialize proxy options */
+    error = git2r_set_proxy_options(&proxy_opts, proxy_val);
+    if (error)
+        git2r_error(
+            __func__,
+            git_error_last(),
+            git2r_err_unable_to_set_proxy_options,
+            NULL);
+    
+    fetch_opts.proxy_opts = proxy_opts;
 
     repository = git2r_repository_open(repo);
     if (!repository)
