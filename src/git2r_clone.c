@@ -23,6 +23,7 @@
 #include "git2r_clone.h"
 #include "git2r_cred.h"
 #include "git2r_error.h"
+#include "git2r_proxy.h"
 #include "git2r_transfer.h"
 
 /**
