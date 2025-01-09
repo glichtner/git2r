@@ -120,7 +120,7 @@ static const R_CallMethodDef callMethods[] =
     CALLDEF(git2r_remote_rename, 3),
     CALLDEF(git2r_remote_set_url, 3),
     CALLDEF(git2r_remote_url, 2),
-    CALLDEF(git2r_remote_ls, 3),
+    CALLDEF(git2r_remote_ls, 4),
     CALLDEF(git2r_repository_can_open, 1),
     CALLDEF(git2r_repository_discover, 2),
     CALLDEF(git2r_repository_fetch_heads, 1),
