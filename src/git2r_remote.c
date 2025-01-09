@@ -498,13 +498,16 @@ static int git2r_set_proxy_options(git_proxy_options *proxy_opts, SEXP proxy_val
  * Based on https://github.com/libgit2/libgit2/blob/babdc376c7/examples/network/ls-remote.c
  * @param repo S3 class git_repository
  * @param name Character vector with URL of remote.
+ * @param credentials The credentials for remote repository access.
+ * @param proxy_val The proxy settings for the remote (NULL, TRUE, or a string with proxy URL).
  * @return Character vector for each reference with the associated commit IDs.
  */
 SEXP attribute_hidden
 git2r_remote_ls(
     SEXP name,
     SEXP repo,
-    SEXP credentials)
+    SEXP credentials,
+    SEXP proxy_val)
 {
     const char *name_ = NULL;
     SEXP result = R_NilValue;
@@ -516,7 +519,6 @@ git2r_remote_ls(
     git_remote_callbacks callbacks = GIT_REMOTE_CALLBACKS_INIT;
     git2r_transfer_data payload = GIT2R_TRANSFER_DATA_INIT;
     git_repository *repository = NULL;
-    git_remote_callbacks callbacks = GIT_REMOTE_CALLBACKS_INIT;
     git_proxy_options proxy_opts;
 
     if (git2r_arg_check_string(name))
