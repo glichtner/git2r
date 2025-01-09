@@ -446,98 +446,6 @@ cleanup:
     return url;
 }
 
-/* A small struct to store the dynamically allocated proxy URL */
-typedef struct {
-    char *proxy_url;
-} git2r_proxy_payload;
-
-/* Free the payload's allocated proxy_url, if any */
-static void git2r_proxy_payload_free(git2r_proxy_payload *payload)
-{
-    if (payload && payload->proxy_url) {
-        free(payload->proxy_url);
-        payload->proxy_url = NULL;
-    }
-}
-
-/**
- * Initialize and set libgit2 proxy options from an R object, storing
- * the allocated proxy URL in a payload struct.
- *
- * This function populates \p proxy_opts based on \p proxy_val:
- * \li If \p proxy_val is \c R_NilValue (i.e., NULL in R), proxy is
- *     set to \c GIT_PROXY_NONE (disabled).
- * \li If \p proxy_val is a logical \c TRUE, proxy is set to
- *     \c GIT_PROXY_AUTO (automatic detection).
- * \li If \p proxy_val is a character vector of length 1, proxy is
- *     set to \c GIT_PROXY_SPECIFIED with that URL, which is
- *     dynamically allocated and stored in \p payload->proxy_url.
- * Otherwise, the function returns \c -1 to indicate invalid
- * or unsupported input.
- *
- * @param proxy_opts A pointer to a \c git_proxy_options struct, which
- *                   is initialized via \c git_proxy_options_init
- *                   and then populated according to \p proxy_val.
- * @param proxy_val  An R object specifying the desired proxy
- *                   configuration: \c NULL (no proxy), a logical
- *                   \c TRUE (auto detection), or a character string
- *                   (URL).
- * @param payload    A pointer to a small struct that will hold the
- *                   dynamically allocated proxy URL, so it remains
- *                   valid until manually freed.
- * @return           0 on success, or -1 if \p proxy_val is invalid
- *                   or memory allocation fails.
- *
- * \note The caller is responsible for calling
- *       \c git2r_proxy_payload_free() on the \p payload struct
- *       to deallocate the proxy URL after \c git_remote_connect()
- *       or \c git_remote_fetch() has finished using it.
- */
- static int git2r_set_proxy_options(
-    git_proxy_options *proxy_opts,
-    SEXP proxy_val,
-    git2r_proxy_payload *payload)
-{
-    git_proxy_options_init(proxy_opts, GIT_PROXY_OPTIONS_VERSION);
-
-    git_proxy_options_init(proxy_opts, GIT_PROXY_OPTIONS_VERSION);
-    proxy_opts->type = GIT_PROXY_NONE;
-    proxy_opts->url  = NULL;
-
-    /* Clear out any existing payload->proxy_url */
-    payload->proxy_url = NULL;
-    /* 1) proxy_val = NULL => GIT_PROXY_NONE */
-    /* 2) proxy_val = TRUE => GIT_PROXY_AUTO */
-    /* 3) proxy_val = string => GIT_PROXY_SPECIFIED + allocate that string */
-
-    if (Rf_isNull(proxy_val)) {
-        /* GIT_PROXY_NONE by default, already set above */
-    } 
-    else if (Rf_isLogical(proxy_val) && Rf_length(proxy_val) == 1 && LOGICAL(proxy_val)[0] == 1) {
-        proxy_opts->type = GIT_PROXY_AUTO;
-    }
-    else if (Rf_isString(proxy_val) && Rf_length(proxy_val) == 1) {
-        proxy_opts->type = GIT_PROXY_SPECIFIED;
-        const char *val = CHAR(STRING_ELT(proxy_val, 0));
-        if (val) {
-            size_t len = strlen(val);
-            payload->proxy_url = (char *)malloc(len + 1);
-            if (!payload->proxy_url) {
-                /* Allocation failed */
-                return -1;
-            }
-            memcpy(payload->proxy_url, val, len + 1);
-            proxy_opts->url = payload->proxy_url;
-        }
-    }
-    else {
-        /* Invalid input: not NULL, not TRUE, not a single string */
-        return -1;
-    }
-
-    return 0;
-}
-
 /**
  * Get the remote's url
  *
@@ -567,13 +475,13 @@ git2r_remote_ls(
     git2r_transfer_data payload = GIT2R_TRANSFER_DATA_INIT;
     git_repository *repository = NULL;
     git_proxy_options proxy_opts;
-    git2r_proxy_payload proxy_payload;
-    memset(&proxy_payload, 0, sizeof(proxy_payload));
 
     if (git2r_arg_check_string(name))
         git2r_error(__func__, NULL, "'name'", git2r_err_string_arg);
     if (git2r_arg_check_credentials(credentials))
         git2r_error(__func__, NULL, "'credentials'", git2r_err_credentials_arg);
+    if (git2r_arg_check_proxy(proxy_val))
+        git2r_error(__func__, NULL, "'proxy_val'", git2r_err_proxy_arg);
 
     if (!Rf_isNull(repo)) {
         repository = git2r_repository_open(repo);
@@ -600,7 +508,7 @@ git2r_remote_ls(
     callbacks.payload = &payload;
     callbacks.credentials = &git2r_cred_acquire_cb;
 
-    error = git2r_set_proxy_options(&proxy_opts, proxy_val, &proxy_payload);
+    error = git2r_set_proxy_options(&proxy_opts, proxy_val);
     if (error)
         goto cleanup;
 
@@ -624,7 +532,6 @@ git2r_remote_ls(
     }
 
 cleanup:
-    git2r_proxy_payload_free(&proxy_payload);    
     git_repository_free(repository);
 
     if (nprotect)
